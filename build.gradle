@@ -1,0 +1,40 @@
+plugins {
+    id 'java'
+}
+
+group = 'be.sle'
+version = '0.0.1-SNAPSHOT'
+sourceCompatibility = '17'
+
+configurations {
+    compileOnly {
+        extendsFrom annotationProcessor
+    }
+}
+
+repositories {
+    mavenCentral()
+}
+
+ext {
+    immutablesVer = '2.9.3'
+    findBugsVer = '3.0.1'
+}
+
+dependencies {
+    implementation 'com.github.mwiede:jsch:0.2.6'
+}
+
+jar {
+    manifest {
+        attributes "Main-Class": "be.sle.sshutil.example.SshExec"
+    }
+
+    from {
+        configurations.runtimeClasspath.collect { it.isDirectory() ? it : zipTree(it) }
+    }
+}
+
+test {
+    useTestNG()
+}
