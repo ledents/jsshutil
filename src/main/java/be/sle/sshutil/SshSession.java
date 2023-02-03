@@ -7,6 +7,8 @@ import com.jcraft.jsch.UserInfo;
 
 import java.io.*;
 import java.nio.charset.StandardCharsets;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * <p>This class tries to simplify as much what is needed to execute commands on an SSH server.
@@ -32,13 +34,17 @@ public class SshSession implements AutoCloseable, Closeable {
     private final String remoteUserName;
     private Session session;
 
-    SshSession(SshEnvironment sshEnvironment, String remoteHost, String remoteUserName) throws JSchException {
+    SshSession(SshEnvironment sshEnvironment, String remoteHost, String remoteUserName) throws SshException {
         this.sshEnvironment = sshEnvironment;
         this.id =   remoteUserName+"@"+sshEnvironment + '#'+ sshEnvironment.getId() ;
         this.remoteHost = remoteHost;
         this.remoteUserName = remoteUserName;
 
-        session = sshEnvironment.getJsch().getSession(remoteUserName, remoteHost,SshEnvironment.DEF_SSH_PORT);
+        try {
+            session = sshEnvironment.getJsch().getSession(remoteUserName, remoteHost,SshEnvironment.DEF_SSH_PORT);
+        } catch (JSchException e) {
+            throw new SshException(e);
+        }
         session.setConfig("StrictHostKeyChecking", "ask");
         session.setUserInfo(new SessionUserInfo());
     }
@@ -58,24 +64,32 @@ public class SshSession implements AutoCloseable, Closeable {
     }
 
 
-    public int exec(String command, StringBuilder sbOut) throws JSchException, InterruptedException, IOException {
+    public int exec(String command, StringBuilder sbOut) throws SshException {
         int rc;
         try (ByteArrayOutputStream bOut = new ByteArrayOutputStream()) {
             rc = exec(command, null, bOut, null);
             sbOut.append(bOut.toString(StandardCharsets.UTF_8));
+        } catch (IOException e) {
+            throw new SshException(e);
         }
         return rc;
     }
-    public int exec(String command, InputStream in, OutputStream out, OutputStream err) throws JSchException, InterruptedException {
+    public int exec(String command, InputStream in, OutputStream out, OutputStream err) throws SshException {
         if (!session.isConnected()) {
-            session.connect();
+            try {
+                session.connect();
+            } catch (JSchException e) {
+                throw new SshException(e);
+            }
         }
 
         ByteArrayOutputStream bOut = null, bErr = null;
 
-        ChannelExec channel = (ChannelExec) session.openChannel("exec");
-        channel.setCommand(command);
+        ChannelExec channel = null;
         try {
+            channel = (ChannelExec) session.openChannel("exec");
+            channel.setCommand(command);
+
             if (in != null) {
                 channel.setInputStream(in);
             }
@@ -89,7 +103,11 @@ public class SshSession implements AutoCloseable, Closeable {
             } else {
                 channel.setErrStream(bErr = new ByteArrayOutputStream());
             }
-            channel.connect();
+            try {
+                channel.connect();
+            } catch (JSchException e) {
+                throw new SshException(e);
+            }
 
             while (channel.isConnected()) {
                 Thread.sleep(100);
@@ -104,6 +122,10 @@ public class SshSession implements AutoCloseable, Closeable {
             int rc = channel.getExitStatus();
             sshEnvironment.dbg("rc -> " + rc);
             return rc;
+        } catch (JSchException e) {
+            throw new SshException(e);
+        } catch (InterruptedException e) {
+            throw new SshException(e);
         } finally {
             if (channel.isConnected()) {
                 channel.disconnect();
@@ -121,6 +143,8 @@ public class SshSession implements AutoCloseable, Closeable {
 
 
     private class SessionUserInfo implements UserInfo  {
+        static final Pattern NEW_HOST_PATTERN
+            = Pattern.compile("The authenticity of host '.*' can't be established\\.");
 
         @Override
         public String getPassphrase() {
@@ -142,15 +166,21 @@ public class SshSession implements AutoCloseable, Closeable {
             return true;
         }
 
+
+
         @Override
         public boolean promptYesNo(String message) {
-            dbg("promptYesNo -> " + message);
-            return false;
+            System.err.println(message);
+            //dbg("promptYesNo -> " + message);
+            String[] msgLines = message.split("\n");
+            Matcher matcher = NEW_HOST_PATTERN.matcher(msgLines[0]);
+            return (matcher.matches());
         }
 
         @Override
         public void showMessage(String message) {
-            dbg("showMessage -> " + message);
+            //dbg("showMessage -> " + message);
+            System.err.println(message);
         }
     }
 

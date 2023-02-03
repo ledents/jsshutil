@@ -1,12 +1,13 @@
 package be.sle.sshutil.example;
 
 import be.sle.sshutil.SshEnvironment;
+import be.sle.sshutil.SshException;
 import be.sle.sshutil.SshSession;
-import com.jcraft.jsch.JSchException;
+
 import java.io.IOException;
 
 public class SshExec {
-    public static void main(String[] args) throws JSchException, InterruptedException {
+    public static void main(String[] args) throws SshException {
         StringBuilder sb = new StringBuilder();
         for (String arg : args) {
             if (sb.length() > 0) sb.append(" ");
@@ -26,8 +27,6 @@ public class SshExec {
             int rc = session.exec("echo $$", sbOut);
             System.out.println(sbOut);
             System.exit(rc);
-        } catch (IOException e) {
-            throw new RuntimeException(e);
         }
     }
 }
